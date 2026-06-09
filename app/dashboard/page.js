@@ -78,13 +78,96 @@ export default function Dashboard() {
   const grouped = {};
   entries.forEach(e => {
     const k = getPeriodKey(e.date);
-    if (!grouped[k]) grouped[k] = { spend: 0, rev: 0, sales: 0 };
+    if (!grouped[k]) grouped[k] = { spend: 0, rev: 0, sales: 0, entries: [] };
     grouped[k].spend += parseFloat(e.spend);
     grouped[k].rev += parseFloat(e.revenue);
     grouped[k].sales += parseInt(e.sales);
+    grouped[k].entries.push(e);
   });
 
   const periodKeys = Object.keys(grouped).sort().reverse();
+
+  function exportPDF(key) {
+    const g = grouped[key];
+    const np = g.rev - g.spend;
+    const roas = g.spend ? (g.rev / g.spend).toFixed(2) : '—';
+    const margin = g.rev ? ((np / g.rev) * 100).toFixed(1) : '0';
+    const label = getPeriodLabel(key);
+
+    const rows = g.entries.sort((a, b) => a.date.localeCompare(b.date)).map(e => {
+      const enp = parseFloat(e.revenue) - parseFloat(e.spend);
+      const eroas = parseFloat(e.spend) ? (parseFloat(e.revenue) / parseFloat(e.spend)).toFixed(2) : '—';
+      return `
+        <tr>
+          <td>${e.date}</td>
+          <td>${e.campaign || '—'}</td>
+          <td>${fmtN(e.spend)}</td>
+          <td>${fmtN(e.revenue)}</td>
+          <td>${e.sales}</td>
+          <td>${eroas !== '—' ? eroas + 'x' : '—'}</td>
+          <td style="color:${enp >= 0 ? '#10b981' : '#ef4444'}">${enp >= 0 ? '+' : ''}${fmtN(enp)}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Marketing Report — ${label}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; padding: 48px; background: #fff; }
+          .header { border-bottom: 2px solid #111; padding-bottom: 20px; margin-bottom: 32px; }
+          .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+          .header p { font-size: 14px; color: #666; }
+          .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 36px; }
+          .card { background: #f9f9f9; border: 1px solid #e5e5e5; border-radius: 10px; padding: 16px; }
+          .card .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+          .card .value { font-size: 20px; font-weight: 700; }
+          .green { color: #10b981; }
+          .red { color: #ef4444; }
+          h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #333; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; }
+          th { text-align: left; padding: 10px 12px; background: #f3f3f3; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #555; border-bottom: 1px solid #e5e5e5; }
+          td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; color: #333; }
+          tr:last-child td { border-bottom: none; }
+          .footer { margin-top: 40px; font-size: 11px; color: #aaa; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Marketing Performance Report</h1>
+          <p>${label} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+        </div>
+        <div class="summary">
+          <div class="card"><div class="label">Revenue</div><div class="value">${fmtN(g.rev)}</div></div>
+          <div class="card"><div class="label">Ad spend</div><div class="value">${fmtN(g.spend)}</div></div>
+          <div class="card"><div class="label">Net profit</div><div class="value ${np >= 0 ? 'green' : 'red'}">${fmtN(np)}</div></div>
+          <div class="card"><div class="label">ROAS</div><div class="value">${roas !== '—' ? roas + 'x' : '—'}</div></div>
+          <div class="card"><div class="label">Total sales</div><div class="value">${g.sales}</div></div>
+          <div class="card"><div class="label">Profit margin</div><div class="value ${parseFloat(margin) >= 0 ? 'green' : 'red'}">${margin}%</div></div>
+          <div class="card"><div class="label">Profit per sale</div><div class="value ${np >= 0 ? 'green' : 'red'}">${g.sales ? fmtN(np / g.sales) : '—'}</div></div>
+        </div>
+        <h2>Daily breakdown</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th><th>Campaign</th><th>Ad spend</th><th>Revenue</th><th>Sales</th><th>ROAS</th><th>Net profit</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="footer">Kaizen Digital Academy · Marketing Tracker</div>
+      </body>
+      </html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 500);
+  }
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -94,7 +177,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      {/* Header */}
       <div className="border-b border-gray-800 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-xs font-bold">MT</div>
@@ -104,7 +186,6 @@ export default function Dashboard() {
       </div>
 
       <div className="max-w-5xl mx-auto px-6 py-8">
-        {/* Summary cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
             { label: 'Total revenue', value: fmtN(totRev), color: 'text-white' },
@@ -119,7 +200,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
           {['log', 'history', 'analytics'].map(t => (
             <button key={t} onClick={() => setTab(t)}
@@ -129,7 +209,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Log tab */}
         {tab === 'log' && (
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-lg">
             <h2 className="text-sm font-medium text-white mb-5">Log new entry</h2>
@@ -143,13 +222,8 @@ export default function Dashboard() {
               ].map(([label, type, placeholder, val, setter]) => (
                 <div key={label}>
                   <label className="block text-xs text-gray-500 mb-1.5 uppercase tracking-wider">{label}</label>
-                  <input
-                    type={type}
-                    placeholder={placeholder}
-                    value={val}
-                    onChange={e => setter(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-                  />
+                  <input type={type} placeholder={placeholder} value={val} onChange={e => setter(e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all" />
                 </div>
               ))}
               {error && <p className="text-red-400 text-xs">{error}</p>}
@@ -161,11 +235,10 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* History tab */}
         {tab === 'history' && (
           <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
             {entries.length === 0 ? (
-              <div className="p-12 text-center text-gray-600 text-sm">No entries yet. Log your first entry.</div>
+              <div className="p-12 text-center text-gray-600 text-sm">No entries yet.</div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
@@ -183,26 +256,16 @@ export default function Dashboard() {
                       <tr key={e.id} className="hover:bg-gray-800/50 transition-colors">
                         <td className="px-4 py-3 text-gray-300">{e.date}</td>
                         <td className="px-4 py-3">
-                          {e.campaign
-                            ? <span className="bg-indigo-500/10 text-indigo-400 text-xs px-2 py-1 rounded-lg">{e.campaign}</span>
-                            : <span className="text-gray-600">—</span>}
+                          {e.campaign ? <span className="bg-indigo-500/10 text-indigo-400 text-xs px-2 py-1 rounded-lg">{e.campaign}</span> : <span className="text-gray-600">—</span>}
                         </td>
                         <td className="px-4 py-3 text-gray-300">{fmtN(e.spend)}</td>
                         <td className="px-4 py-3 text-gray-300">{fmtN(e.revenue)}</td>
                         <td className="px-4 py-3 text-gray-300">{e.sales}</td>
                         <td className="px-4 py-3">
-                          {roas ? (
-                            <span className={`text-xs font-medium px-2 py-1 rounded-lg ${parseFloat(roas) >= 2 ? 'bg-emerald-500/10 text-emerald-400' : parseFloat(roas) < 1 ? 'bg-red-500/10 text-red-400' : 'bg-gray-700 text-gray-300'}`}>
-                              {roas}x
-                            </span>
-                          ) : '—'}
+                          {roas ? <span className={`text-xs font-medium px-2 py-1 rounded-lg ${parseFloat(roas) >= 2 ? 'bg-emerald-500/10 text-emerald-400' : parseFloat(roas) < 1 ? 'bg-red-500/10 text-red-400' : 'bg-gray-700 text-gray-300'}`}>{roas}x</span> : '—'}
                         </td>
-                        <td className={`px-4 py-3 font-medium ${np >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {np >= 0 ? '+' : ''}{fmtN(np)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button onClick={() => deleteEntry(e.id)} className="text-gray-700 hover:text-red-400 transition-colors text-lg leading-none">×</button>
-                        </td>
+                        <td className={`px-4 py-3 font-medium ${np >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{np >= 0 ? '+' : ''}{fmtN(np)}</td>
+                        <td className="px-4 py-3"><button onClick={() => deleteEntry(e.id)} className="text-gray-700 hover:text-red-400 transition-colors text-lg leading-none">×</button></td>
                       </tr>
                     );
                   })}
@@ -212,7 +275,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Analytics tab */}
         {tab === 'analytics' && (
           <div>
             <div className="flex gap-1 mb-6 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
@@ -235,7 +297,13 @@ export default function Dashboard() {
                   const margin = g.rev ? ((np / g.rev) * 100).toFixed(1) : '0';
                   return (
                     <div key={k} className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-                      <p className="text-sm font-medium text-white mb-4">{getPeriodLabel(k)}</p>
+                      <div className="flex justify-between items-center mb-4">
+                        <p className="text-sm font-medium text-white">{getPeriodLabel(k)}</p>
+                        <button onClick={() => exportPDF(k)}
+                          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 px-3 py-1.5 rounded-lg transition-all">
+                          Export PDF
+                        </button>
+                      </div>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                         {[
                           ['Revenue', fmtN(g.rev), 'text-white'],
